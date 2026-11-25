@@ -1,0 +1,39 @@
+workflow:
+  id: incident-probe-3
+  name: Incident probe 3 (test only)
+  description: Tests iterating incident.alerts with foreach and writing incident enrichments. Creates no tickets and changes nothing in Jira.
+  disabled: true
+  triggers:
+    - type: incident
+      events:
+        - created
+        - updated
+  consts: {}
+  owners: []
+  services: []
+  steps: []
+  actions:
+    - name: print-incident-state
+      provider:
+        type: console
+        with:
+          message: "STATE: id={{ incident.id }} | status={{ incident.status }} | enrichments={{ incident.enrichments }}"
+    - name: write-incident-enrichment
+      provider:
+        type: mock
+        with:
+          enrich_incident:
+            - key: probe_ticket
+              value: "TEST-1"
+    - name: print-alert-names
+      foreach: "{{ incident.alerts }}"
+      provider:
+        type: console
+        with:
+          message: "ALERT_NAME: {{ foreach.value.name }} | fingerprint={{ foreach.value.fingerprint }}"
+    - name: print-alert-labels
+      foreach: "{{ incident.alerts }}"
+      provider:
+        type: console
+        with:
+          message: "ALERT_LABELS: {{ foreach.value.labels.display_name }} | {{ foreach.value.labels.layer }} | {{ foreach.value.labels.ci_name }}"

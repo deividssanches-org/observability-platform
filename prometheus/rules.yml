@@ -1,0 +1,159 @@
+# Corrected rules. Changes compared to the original:
+#  1. AppUnhealthy (DB): no longer resolves just because the system stopped
+#     publishing app_up (see the comment on the rule).
+#  2. All rules have the `service` and `layer` labels (app | db | worker |
+#     integration), so Keep can route by label instead of by text.
+#  3. Summaries (annotations.summary) kept IDENTICAL to the originals, because
+#     the Keep workflow identifies EDW/Technology One and APP/DB by these texts.
+#  4. TargetSystemUnavailable and SourceSystemUnavailable (APP) are suppressed
+#     while the DB alert of the same system is active, so a database outage
+#     opens only the DB ticket (the root cause), not an extra APP ticket.
+#  5. app/db/worker alerts carry a `jira_project` label (Jira project KEY where
+#     Keep creates the ticket): APP for the app layer, DB for the db layer and
+#     OPS for workers. Replace these placeholders with the real project keys.
+#     They also carry a `team` label (shown as "Resolver" in the ticket). Set it per
+#     rule when different layers belong to different teams.
+groups:
+  - name: education-integration-poc
+    rules:
+      # ---------------------------------------------------------------------
+      # APP LAYER: Prometheus cannot scrape metrics from the system
+      #
+      # Suppressed (unless ...) while the DB alert of the same system is active,
+      # that is, while the last known app_up of that system is 0. In that case
+      # the database is the root cause and the app being unreachable is only
+      # the symptom. If the app goes down with no app_up == 0 ever reported,
+      # this alert fires normally.
+      # ---------------------------------------------------------------------
+      - alert: TargetSystemUnavailable
+        expr: (up{job="edw"} == 0) unless on() (last_over_time(app_up{app="edw"}[1h]) == 0)
+        for: 20s
+        labels:
+          severity: critical
+          service: edw
+          layer: app
+          jira_project: "EDW"
+          team: "Integrations/APP Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }} cannot be scraped"
+
+      - alert: SourceSystemUnavailable
+        expr: (up{job="technology-one-sm"} == 0) unless on() (last_over_time(app_up{app="technology-one-sm"}[1h]) == 0)
+        for: 20s
+        labels:
+          severity: critical
+          service: technology-one-sm
+          layer: app
+          jira_project: "SMO"
+          team: "Integrations/APP Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }} cannot be scraped"
+
+      # DB LAYER: one rule per system, so each can have its own team and project.
+      - alert: AppUnhealthy
+        expr: last_over_time(app_up{app="edw"}[1h]) == 0
+        for: 20s
+        labels:
+          severity: warning
+          service: "{{ $labels.app }}"
+          layer: db
+          jira_project: "EDW"
+          team: "Data Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.app }} is running but its database is unreachable"
+
+      - alert: AppUnhealthy
+        expr: last_over_time(app_up{app="technology-one-sm"}[1h]) == 0
+        for: 20s
+        labels:
+          severity: warning
+          service: "{{ $labels.app }}"
+          layer: db
+          jira_project: "SMO"
+          team: "Data Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.app }} is running but its database is unreachable"
+
+      # ---------------------------------------------------------------------
+      # INTEGRATION LAYER (no matching rule in the Keep workflow today)
+      # ---------------------------------------------------------------------
+      - alert: IntegrationLastRunFailed
+        expr: integration_last_run_success == 0 and on(integration) integration_runs_total{outcome="failure"} > 0
+        labels:
+          severity: critical
+          dependency: edw
+          layer: integration
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }}: latest run failed (target {{ $labels.target }})"
+
+      - alert: IntegrationStale
+        expr: time() - integration_last_success_timestamp_seconds > 90
+        labels:
+          severity: warning
+          layer: integration
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }}: no successful run for over 90s"
+
+      # ---------------------------------------------------------------------
+      # WORKER LAYER (blue band): any appevents worker that is down
+      # ---------------------------------------------------------------------
+      - alert: IntegrationWorkerUnavailable
+        expr: up{job=~"appevents-curriculum|appevents-general|appevents-student"} == 0
+        for: 10s
+        labels:
+          severity: critical
+          dependency: edw
+          layer: worker
+          jira_project: "OPS"
+          team: "Operations Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }} worker process has stopped"
+
+      # ---------------------------------------------------------------------
+      # WORKER LAYERS (blue band): each appevents worker that is down
+      # ---------------------------------------------------------------------
+      - alert: IntegrationWorkerUnavailable
+        expr: up{job="appevents-curriculum"} == 0
+        for: 10s
+        labels:
+          severity: critical
+          dependency: edw
+          layer: worker
+          jira_project: "OCV"
+          team: "Operations Curriculum Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }} worker process has stopped"
+
+      - alert: IntegrationWorkerUnavailable
+        expr: up{job="appevents-general"} == 0
+        for: 10s
+        labels:
+          severity: critical
+          dependency: edw
+          layer: worker
+          jira_project: "OGNL"
+          team: "Operations General Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }} worker process has stopped"
+
+      - alert: IntegrationWorkerUnavailable
+        expr: up{job="appevents-student"} == 0
+        for: 10s
+        labels:
+          severity: critical
+          dependency: edw
+          layer: worker
+          jira_project: "OSTD"
+          team: "Operations Curriculum Squad"
+          source: grafana
+        annotations:
+          summary: "{{ $labels.display_name }} worker process has stopped"

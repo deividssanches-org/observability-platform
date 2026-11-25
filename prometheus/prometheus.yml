@@ -1,0 +1,149 @@
+# Scrape config for the observability-env-simulator services (shared network observability-sim).
+# ci_name is the exact Jira Assets object Name (the CI) each target represents;
+# display_name is a short label for dashboards.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+global:
+  scrape_interval: 10s
+  scrape_timeout: 5s
+  evaluation_interval: 10s
+
+rule_files:
+  - /etc/prometheus/rules.yml
+  - /etc/prometheus/rules-website.yml
+
+scrape_configs:
+  - job_name: technology-one-sm
+    static_configs:
+      - targets: ["technology-one-sm:8000"]
+        labels:
+          {
+            display_name: "Technology One (SM)",
+            ci_name: "Technology One (SM)",
+          }
+  - job_name: edw
+    static_configs:
+      - targets: ["edw:8000"]
+        labels: { display_name: "EDW", ci_name: "EDW" }
+  - job_name: appevents-student
+    static_configs:
+      - targets: ["appevents-student:9100"]
+        labels:
+          {
+            display_name: "AppEvents - Student",
+            ci_name: "ETL - DXMULTI-0001 : AppEvents from SMS to EDW - Student",
+          }
+  - job_name: appevents-curriculum
+    static_configs:
+      - targets: ["appevents-curriculum:9100"]
+        labels:
+          {
+            display_name: "AppEvents - Curriculum",
+            ci_name: "ETL - DXMULTI-0001 : AppEvents from SMS to EDW - Curriculum",
+          }
+  - job_name: appevents-general
+    static_configs:
+      - targets: ["appevents-general:9100"]
+        labels:
+          {
+            display_name: "AppEvents - General",
+            ci_name: "ETL - DXMULTI-0001 : AppEvents from SMS to EDW",
+          }
+
+  #########################################################################################
+  #. BLACKBOX MONITORING CONFIGURATION
+  #########################################################################################
+
+  # HTTP/HTTPS: add URLs to targets. TLS certificate expiry is exposed automatically.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - "https://g1.globo.com"
+          - "https://ge.globo.com"
+          - "http://keep.swarm.test"
+          - "http://jellyfin.swarm.test/"
+        # Example:
+        #   - https://www.example.com
+        #   - https://api.example.com/health
+
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # TCP: use host:port, for example db.example.net:5432 or mail.example.net:25.
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - "appevents-curriculum:9100"
+          - "appevents-general:9100"
+          - "appevents-student:9100"
+          - "technology-one-sm:8000"
+          - "edw:8000"
+          - "keep-backend:8080"
+          - "keep-db:5432"
+        #   - app.example.net:443
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ICMP: use an IP address or hostname reachable from the Swarm node.
+  - job_name: blackbox-icmp
+    metrics_path: /probe
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    params:
+      module: [icmp]
+    static_configs:
+      - targets: []
+        # Example:
+        #   - 1.1.1.1
+        #   - 8.8.8.8
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # DNS: tests the configured resolver against the query_name in blackbox.yml.
+  # Change the resolver IP here and the query name in blackbox/blackbox.yml.
+  - job_name: blackbox-dns
+    metrics_path: /probe
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    params:
+      module: [dns_udp]
+    static_configs:
+      - targets: ["1.1.1.1"]
+        labels:
+          instance: "DNS resolver 1.1.1.1 (query: google.com)"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+#########################################################################################
+#. END BLACKBOX CONFIGURATION
+#########################################################################################

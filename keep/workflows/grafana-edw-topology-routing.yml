@@ -1,0 +1,304 @@
+workflow:
+  id: v1grafana-edw-topology-routing
+  name: v1 Grafana -> EDW Root Cause Routing & Suppression
+  description: Native symptom suppression and single-click Root Cause analysis for EDW and Technology One topologies, with auto-closure
+  disabled: true
+  triggers:
+    - type: alert
+      filters:
+        - key: labels.source
+          value: grafana
+  consts:
+    jira_host: "anotaaideivid.atlassian.net"
+    jira_issue_type: "Task"
+    jira_done_status: "Done"
+    resolved_comment: "Alert resolved automatically by Keep."
+    impact_downstream: "Downstream integration flow blocks are completely stopped."
+    # Dashboard link shown in the ticket "Logs" row. Replace the dashboard path
+    # with the one from your dashboard URL (the part starting at /d/).
+    grafana_url: "http://grafana.swarm.test"
+    grafana_dashboard_path: "/d/edu-integration-overview/01-education-integration-jobs-and-edw-health"
+  owners: []
+  services: []
+  steps: []
+  actions:
+    # =========================================================================
+    # 1. ROOT CAUSE LAYER: EDW
+    #    Each rule has its OWN state on the alert (inc_*, arm_*, tkt_*, url_*,
+    #    sum_*), so an open ticket in one layer (e.g. APP) never blocks
+    #    nor closes the ticket of another layer (e.g. DB).
+    #    inc_<layer> = "open" -> a ticket is already open in this layer
+    #    any other value (empty, "closed") -> creates one.
+    # =========================================================================
+    - name: create-jira-root-cause-edw-db
+      if: "'{{ alert.status }}' == 'firing' and '{{ alert.inc_edw_db }}' != 'open' and ('edw' in '{{ alert.labels.service }} {{ alert.labels.app }}'.lower() or 'edw' in '{{ alert.description }}'.lower()) and ('unreachable' in '{{ alert.description }}'.lower() or 'database' in '{{ alert.description }}'.lower() or 'db' in '{{ alert.description }}'.lower())"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          project_key: "{{ alert.labels.jira_project }}"
+          issue_type: "{{ consts.jira_issue_type }}"
+          summary: "{{ alert.labels.display_name }} (Database Layer) unavailable"
+          description: "🔴 **{{ alert.labels.display_name }} (Database Layer) unavailable · Root Cause Identified**\n\n| Affected CI | Details |\n| --- | --- |\n| **Affected CI** | {{ alert.labels.ci_name }} (Full Stack Affected) |\n| **Alert message** | {{ alert.description }} |\n| **Resolver** | {{ alert.labels.team }} |\n| **Impact** | {{ consts.impact_downstream }} |\n| **Logs** | [Grafana · Dashboard: failed runs in this window|{{ consts.grafana_url }}{{ consts.grafana_dashboard_path }}?from=now-1h] |\n\n| Trigger Event | State | Target System |\n| --- | --- | --- |\n| {{ alert.name }} | CRITICAL | {{ alert.labels.display_name }} |\n"
+          enrich_alert:
+            - key: inc_edw_db
+              value: "open"
+            - key: arm_edw_db
+              value: "yes"
+            - key: tkt_edw_db
+              value: results.issue.key
+            - key: url_edw_db
+              value: results.ticket_url
+            - key: sum_edw_db
+              value: "{{ alert.labels.display_name }} (Database Layer) unavailable"
+
+    - name: create-jira-root_cause-edw-app
+      if: "'{{ alert.status }}' == 'firing' and '{{ alert.inc_edw_app }}' != 'open' and ('edw' in '{{ alert.labels.service }} {{ alert.labels.app }}'.lower() or 'edw' in '{{ alert.description }}'.lower()) and ('scraped' in '{{ alert.description }}'.lower() or 'cannot' in '{{ alert.description }}'.lower()) and 'integrationworker' not in '{{ alert.name }}'.lower()"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          project_key: "{{ alert.labels.jira_project }}"
+          issue_type: "{{ consts.jira_issue_type }}"
+          summary: "{{ alert.labels.display_name }} (Application Layer) issue detected"
+          description: "🔴 **{{ alert.labels.display_name }} (Application Layer) unavailable · Root Cause Identified**\n\n| Affected CI | Details |\n| --- | --- |\n| **Affected CI** | {{ alert.labels.ci_name }} (Full Stack Affected) |\n| **Alert message** | {{ alert.description }} |\n| **Resolver** | {{ alert.labels.team }} |\n| **Impact** | {{ consts.impact_downstream }} |\n| **Logs** | [Grafana · Dashboard: failed runs in this window|{{ consts.grafana_url }}{{ consts.grafana_dashboard_path }}?from=now-1h] |\n\n| Trigger Event | State | Target System |\n| --- | --- | --- |\n| {{ alert.name }} | CRITICAL | {{ alert.labels.display_name }} |\n"
+          enrich_alert:
+            - key: inc_edw_app
+              value: "open"
+            - key: arm_edw_app
+              value: "yes"
+            - key: tkt_edw_app
+              value: results.issue.key
+            - key: url_edw_app
+              value: results.ticket_url
+            - key: sum_edw_app
+              value: "{{ alert.labels.display_name }} (Application Layer) issue detected"
+
+    # =========================================================================
+    # 2. ROOT CAUSE LAYER: TECHNOLOGY ONE (SM)
+    # =========================================================================
+    - name: create-jira-root-cause-techone-db
+      if: "'{{ alert.status }}' == 'firing' and '{{ alert.inc_t1_db }}' != 'open' and ('technology-one' in '{{ alert.name }} {{ alert.description }} {{ alert.labels.service }} {{ alert.labels.app }}'.lower() or 'technology one' in '{{ alert.name }} {{ alert.description }} {{ alert.labels.service }} {{ alert.labels.app }}'.lower()) and ('unreachable' in '{{ alert.description }}'.lower() or 'database' in '{{ alert.description }}'.lower() or 'db' in '{{ alert.description }}'.lower())"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          project_key: "{{ alert.labels.jira_project }}"
+          issue_type: "{{ consts.jira_issue_type }}"
+          summary: "{{ alert.labels.display_name }} (Database Layer) unavailable"
+          description: "🔴 **{{ alert.labels.display_name }} (Database Layer) unavailable · Root Cause Identified**\n\n| Affected CI | Details |\n| --- | --- |\n| **Affected CI** | {{ alert.labels.ci_name }} (Full Stack Affected) |\n| **Alert message** | {{ alert.description }} |\n| **Resolver** | {{ alert.labels.team }} |\n| **Impact** | {{ consts.impact_downstream }} |\n| **Logs** | [Grafana · Dashboard: failed runs in this window|{{ consts.grafana_url }}{{ consts.grafana_dashboard_path }}?from=now-1h] |\n\n| Trigger Event | State | Target System |\n| --- | --- | --- |\n| {{ alert.name }} | CRITICAL | {{ alert.labels.display_name }} |\n"
+          enrich_alert:
+            - key: inc_t1_db
+              value: "open"
+            - key: arm_t1_db
+              value: "yes"
+            - key: tkt_t1_db
+              value: results.issue.key
+            - key: url_t1_db
+              value: results.ticket_url
+            - key: sum_t1_db
+              value: "{{ alert.labels.display_name }} (Database Layer) unavailable"
+
+    - name: create-jira-root-cause-techone-app
+      if: "'{{ alert.status }}' == 'firing' and '{{ alert.inc_t1_app }}' != 'open' and ('technology-one' in '{{ alert.name }} {{ alert.description }} {{ alert.labels.service }} {{ alert.labels.app }}'.lower() or 'technology one' in '{{ alert.name }} {{ alert.description }} {{ alert.labels.service }} {{ alert.labels.app }}'.lower()) and ('scraped' in '{{ alert.description }}'.lower() or 'cannot' in '{{ alert.description }}'.lower())"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          project_key: "{{ alert.labels.jira_project }}"
+          issue_type: "{{ consts.jira_issue_type }}"
+          summary: "{{ alert.labels.display_name }} (Application Layer) issue detected"
+          description: "🔴 **{{ alert.labels.display_name }} (Application Layer) unavailable · Root Cause Identified**\n\n| Affected CI | Details |\n| --- | --- |\n| **Affected CI** | {{ alert.labels.ci_name }} (Full Stack Affected) |\n| **Alert message** | {{ alert.description }} |\n| **Resolver** | {{ alert.labels.team }} |\n| **Impact** | {{ consts.impact_downstream }} |\n| **Logs** | [Grafana · Dashboard: failed runs in this window|{{ consts.grafana_url }}{{ consts.grafana_dashboard_path }}?from=now-1h] |\n\n| Trigger Event | State | Target System |\n| --- | --- | --- |\n| {{ alert.name }} | CRITICAL | {{ alert.labels.display_name }} |\n"
+          enrich_alert:
+            - key: inc_t1_app
+              value: "open"
+            - key: arm_t1_app
+              value: "yes"
+            - key: tkt_t1_app
+              value: results.issue.key
+            - key: url_t1_app
+              value: results.ticket_url
+            - key: sum_t1_app
+              value: "{{ alert.labels.display_name }} (Application Layer) issue detected"
+
+    # =========================================================================
+    # 3. BLUE LAYER: ISOLATED WORKER
+    # =========================================================================
+    - name: create-jira-worker-isolated
+      if: "'{{ alert.status }}' == 'firing' and '{{ alert.inc_worker }}' != 'open' and 'integrationworker' in '{{ alert.name }}'.lower()"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          project_key: "{{ alert.labels.jira_project }}"
+          issue_type: "{{ consts.jira_issue_type }}"
+          summary: "{{ alert.description }} failure detected"
+          description: "⚠️ **{{ alert.description }} Incident · Isolated Failure**\n\n| Affected CI | Details |\n| --- | --- |\n| **Affected CI** | {{ alert.labels.ci_name }} |\n| **Resolver** | {{ alert.labels.team }} |\n| **Impact** | Specific integration queue is delayed/stopped. Core infrastructure is healthy. |\n| **Logs** | [Grafana · Dashboard: check worker status|{{ consts.grafana_url }}{{ consts.grafana_dashboard_path }}?from=now-1h] |\n\n| Trigger Event | State | Target System |\n| --- | --- | --- |\n| {{ alert.name }} | WARNING | {{ alert.labels.dependency }} |\n"
+          enrich_alert:
+            - key: inc_worker
+              value: "open"
+            - key: arm_worker
+              value: "yes"
+            - key: tkt_worker
+              value: results.issue.key
+            - key: url_worker
+              value: results.ticket_url
+            - key: sum_worker
+              value: "{{ alert.description }} failure detected"
+
+    # =========================================================================
+    # 4. END OF INCIDENT
+    #    4.1 releases ticket creation in ALL layers (does not depend on Jira,
+    #        so it runs even if a ticket has been deleted)
+    #    4.2 per layer: comments on the ticket and then moves it to Done, only
+    #        if this alert opened it (arm_<layer> = "yes"), keeping the
+    #        original title. The comment uses credentials in the URL (the
+    #        workflow's JIRA_USER and JIRA_TOKEN secrets), because the
+    #        Authorization header does not reach Jira through the http provider.
+    # =========================================================================
+    - name: enable-creation-after-resolved
+      if: "'{{ alert.status }}' == 'resolved'"
+      provider:
+        type: mock
+        with:
+          enrich_alert:
+            - key: inc_edw_db
+              value: "closed"
+            - key: inc_edw_app
+              value: "closed"
+            - key: inc_t1_db
+              value: "closed"
+            - key: inc_t1_app
+              value: "closed"
+            - key: inc_worker
+              value: "closed"
+
+    - name: comment-ticket-edw-db
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_edw_db }}' == 'yes' and '{{ alert.tkt_edw_db }}' not in ('', 'None') and '{{ alert.sum_edw_db }}' not in ('', 'None')"
+      provider:
+        type: http
+        with:
+          method: POST
+          url: "https://{{ secrets.JIRA_USER }}:{{ secrets.JIRA_TOKEN }}@{{ consts.jira_host }}/rest/api/2/issue/{{ alert.tkt_edw_db }}/comment"
+          headers:
+            Content-Type: "application/json"
+            Accept: "application/json"
+          body:
+            body: "{{ consts.resolved_comment }} Alert: {{ alert.name }} - {{ alert.description }}"
+
+    - name: close-ticket-edw-db
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_edw_db }}' == 'yes' and '{{ alert.tkt_edw_db }}' not in ('', 'None') and '{{ alert.sum_edw_db }}' not in ('', 'None')"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          issue_id: "{{ alert.tkt_edw_db }}"
+          summary: "{{ alert.sum_edw_db }}"
+          transition_to: "{{ consts.jira_done_status }}"
+          enrich_alert:
+            - key: arm_edw_db
+              value: "no"
+
+    - name: comment-ticket-edw-app
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_edw_app }}' == 'yes' and '{{ alert.tkt_edw_app }}' not in ('', 'None') and '{{ alert.sum_edw_app }}' not in ('', 'None')"
+      provider:
+        type: http
+        with:
+          method: POST
+          url: "https://{{ secrets.JIRA_USER }}:{{ secrets.JIRA_TOKEN }}@{{ consts.jira_host }}/rest/api/2/issue/{{ alert.tkt_edw_app }}/comment"
+          headers:
+            Content-Type: "application/json"
+            Accept: "application/json"
+          body:
+            body: "{{ consts.resolved_comment }} Alert: {{ alert.name }} - {{ alert.description }}"
+
+    - name: close-ticket-edw-app
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_edw_app }}' == 'yes' and '{{ alert.tkt_edw_app }}' not in ('', 'None') and '{{ alert.sum_edw_app }}' not in ('', 'None')"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          issue_id: "{{ alert.tkt_edw_app }}"
+          summary: "{{ alert.sum_edw_app }}"
+          transition_to: "{{ consts.jira_done_status }}"
+          enrich_alert:
+            - key: arm_edw_app
+              value: "no"
+
+    - name: comment-ticket-t1-db
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_t1_db }}' == 'yes' and '{{ alert.tkt_t1_db }}' not in ('', 'None') and '{{ alert.sum_t1_db }}' not in ('', 'None')"
+      provider:
+        type: http
+        with:
+          method: POST
+          url: "https://{{ secrets.JIRA_USER }}:{{ secrets.JIRA_TOKEN }}@{{ consts.jira_host }}/rest/api/2/issue/{{ alert.tkt_t1_db }}/comment"
+          headers:
+            Content-Type: "application/json"
+            Accept: "application/json"
+          body:
+            body: "{{ consts.resolved_comment }} Alert: {{ alert.name }} - {{ alert.description }}"
+
+    - name: comment-ticket-t1-db
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_t1_db }}' == 'yes' and '{{ alert.tkt_t1_db }}' not in ('', 'None') and '{{ alert.sum_t1_db }}' not in ('', 'None')"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          issue_id: "{{ alert.tkt_t1_db }}"
+          summary: "{{ alert.sum_t1_db }}"
+          transition_to: "{{ consts.jira_done_status }}"
+          enrich_alert:
+            - key: arm_t1_db
+              value: "no"
+
+    - name: comement-ticket-t1-app
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_t1_app }}' == 'yes' and '{{ alert.tkt_t1_app }}' not in ('', 'None') and '{{ alert.sum_t1_app }}' not in ('', 'None')"
+      provider:
+        type: http
+        with:
+          method: POST
+          url: "https://{{ secrets.JIRA_USER }}:{{ secrets.JIRA_TOKEN }}@{{ consts.jira_host }}/rest/api/2/issue/{{ alert.tkt_t1_app }}/comment"
+          headers:
+            Content-Type: "application/json"
+            Accept: "application/json"
+          body:
+            body: "{{ consts.resolved_comment }} Alert: {{ alert.name }} - {{ alert.description }}"
+
+    - name: close-ticket-t1-app
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_t1_app }}' == 'yes' and '{{ alert.tkt_t1_app }}' not in ('', 'None') and '{{ alert.sum_t1_app }}' not in ('', 'None')"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          issue_id: "{{ alert.tkt_t1_app }}"
+          summary: "{{ alert.sum_t1_app }}"
+          transition_to: "{{ consts.jira_done_status }}"
+          enrich_alert:
+            - key: arm_t1_app
+              value: "no"
+
+    - name: comment-ticket-worker
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_worker }}' == 'yes' and '{{ alert.tkt_worker }}' not in ('', 'None') and '{{ alert.sum_worker }}' not in ('', 'None')"
+      provider:
+        type: http
+        with:
+          method: POST
+          url: "https://{{ secrets.JIRA_USER }}:{{ secrets.JIRA_TOKEN }}@{{ consts.jira_host }}/rest/api/2/issue/{{ alert.tkt_worker }}/comment"
+          headers:
+            Content-Type: "application/json"
+            Accept: "application/json"
+          body:
+            body: "{{ consts.resolved_comment }} Alert: {{ alert.name }} - {{ alert.description }}"
+
+    - name: close-ticket-worker
+      if: "'{{ alert.status }}' == 'resolved' and '{{ alert.arm_worker }}' == 'yes' and '{{ alert.tkt_worker }}' not in ('', 'None') and '{{ alert.sum_worker }}' not in ('', 'None')"
+      provider:
+        type: jira
+        config: "{{ providers.jira_free }}"
+        with:
+          issue_id: "{{ alert.tkt_worker }}"
+          summary: "{{ alert.sum_worker }}"
+          transition_to: "{{ consts.jira_done_status }}"
+          enrich_alert:
+            - key: arm_worker
+              value: "no"
